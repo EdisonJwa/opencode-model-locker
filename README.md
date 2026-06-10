@@ -7,7 +7,7 @@ Automatically restrict model availability based on configurable time ranges. Gre
 
 ## Features
 
-- **Time-based model filtering** - Automatically hide expensive models during configured hours
+- **Pattern-based model filtering** - Use wildcards like `provider/*` or `*` to disable all models
 - **Multiple fallback models** - Priority-ordered fallback list
 - **Timezone-aware** - Use any IANA timezone (e.g., "America/New_York", "UTC")
 - **Cross-midnight support** - Configure ranges like "22:00-06:00"
@@ -56,18 +56,16 @@ Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` fo
 ```json
 {
   "refreshIntervalSeconds": 60,
-  "targetProvider": "anthropic",
-  "defaultFallbacks": ["anthropic/claude-3-5-haiku-20241022"],
   "rules": [
     {
-      "id": "work-hours-expense",
+      "id": "work-hours-disable-all",
       "provider": "anthropic",
-      "disabledModels": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
-      "fallbackModels": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+      "disabledModels": ["*"],
+      "fallbackModels": ["claude-3-5-haiku-20241022"],
       "timeRanges": [
         {
           "start": "09:00",
-          "end": "17:00",
+          "end": "18:00",
           "timezone": "America/New_York"
         }
       ],
@@ -75,9 +73,9 @@ Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` fo
       "enabled": true
     },
     {
-      "id": "night-cheap",
+      "id": "night-disable-gpt4",
       "provider": "openai",
-      "disabledModels": ["gpt-4o"],
+      "disabledModels": ["gpt-4o", "gpt-4-turbo", "openai/*"],
       "fallbackModels": ["gpt-4o-mini"],
       "timeRanges": [
         {
@@ -92,13 +90,20 @@ Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` fo
 }
 ```
 
+### Pattern Syntax for `disabledModels`
+
+| Pattern | Example | Matches |
+|---------|---------|---------|
+| `*` | `"*"` | All models (disables entire provider) |
+| `provider/*` | `"openai/*"` | All models from that provider |
+| Specific model | `"gpt-4o"` | Only that exact model |
+| Prefix match | `"gpt-4*"` | Any model starting with "gpt-4" |
+
 ### Configuration Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `refreshIntervalSeconds` | number | No | How often to re-evaluate rules (default: 60) |
-| `targetProvider` | string | No | Which provider to filter (OpenCode API limits to one) |
-| `defaultFallbacks` | array | No | Default fallback models when rule has none |
 | `rules` | array | Yes | Array of rule objects |
 
 ### Rule Schema
@@ -107,7 +112,7 @@ Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` fo
 |-------|------|----------|-------------|
 | `id` | string | Yes | Unique identifier for the rule |
 | `provider` | string | Yes | Provider ID (e.g., "anthropic", "openai") |
-| `disabledModels` | array | Yes | Model IDs to disable during time ranges |
+| `disabledModels` | array | Yes | Model patterns to disable (supports `*` and `provider/*`) |
 | `fallbackModels` | array | No | Priority-ordered fallback model IDs |
 | `timeRanges` | array | Yes | Array of time range objects |
 | `timeRanges[].start` | string | Yes | Start time "HH:MM" |
@@ -146,39 +151,49 @@ Returns a recommended fallback model to use.
 
 ## API Limitations
 
-- **Single provider limit**: OpenCode's plugin API only supports filtering ONE provider per plugin. Use `targetProvider` in config to specify which provider.
-- **Manual model switching**: Actual model switching requires manual user action (OpenCode doesn't expose model swap API to plugins)
+- **Single provider filter**: OpenCode's plugin API only supports filtering ONE provider per plugin. If you have rules for multiple providers, only the first one will be filtered.
 
 ## Common Configurations
 
-### Disable GPT-4 at night (UTC)
+### Disable ALL models during work hours
 
 ```json
 {
-  "targetProvider": "openai",
+  "rules": [{
+    "id": "work-hours",
+    "provider": "anthropic",
+    "disabledModels": ["*"],
+    "fallbackModels": ["claude-3-5-haiku-20241022"],
+    "timeRanges": [{ "start": "09:00", "end": "18:00", "timezone": "America/New_York" }],
+    "daysOfWeek": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+  }]
+}
+```
+
+### Disable all OpenAI models at night (UTC)
+
+```json
+{
   "rules": [{
     "id": "night-disable",
     "provider": "openai",
-    "disabledModels": ["gpt-4o", "gpt-4-turbo"],
+    "disabledModels": ["openai/*"],
     "fallbackModels": ["gpt-4o-mini"],
     "timeRanges": [{ "start": "22:00", "end": "06:00", "timezone": "UTC" }]
   }]
 }
 ```
 
-### Work hours restriction (Eastern Time)
+### Disable specific expensive models but keep cheaper ones
 
 ```json
 {
-  "targetProvider": "anthropic",
-  "defaultFallbacks": ["anthropic/claude-3-5-haiku-20241022"],
   "rules": [{
-    "id": "work-hours",
+    "id": "expensive-models",
     "provider": "anthropic",
-    "disabledModels": ["claude-opus-4-20250514"],
+    "disabledModels": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
     "fallbackModels": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
-    "timeRanges": [{ "start": "09:00", "end": "18:00", "timezone": "America/New_York" }],
-    "daysOfWeek": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+    "timeRanges": [{ "start": "09:00", "end": "18:00", "timezone": "America/New_York" }]
   }]
 }
 ```
