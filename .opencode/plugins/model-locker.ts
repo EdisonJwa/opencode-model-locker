@@ -132,7 +132,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
   const configPath = join(directory, ".opencode", "model-locker.json");
   const config = loadConfig(configPath);
 
-  const statusTool = {
+  const tools = {
     "model-locker-status": tool({
       description: "Show current model locker status, active rules, and disabled models",
       args: {},
@@ -161,17 +161,55 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
         }, null, 2);
       },
     }),
+    "model-locker-swap": tool({
+      description: "Swap to a fallback model for the given provider",
+      args: {
+        provider: tool.schema.string(),
+        modelIndex: tool.schema.number().optional(),
+      },
+      async execute(args) {
+        const { provider, modelIndex = 0 } = args;
+
+        if (!config) {
+          return JSON.stringify({ success: false, message: "No config loaded" });
+        }
+
+        const activeRules = getActiveRules(config);
+        const matchingRule = activeRules.find(r => r.provider === provider);
+
+        if (!matchingRule) {
+          return JSON.stringify({ success: false, message: `No active rule for provider: ${provider}` });
+        }
+
+        const fallbacks = matchingRule.fallbackModels || config.defaultFallbacks || [];
+        const targetModel = fallbacks[modelIndex];
+
+        if (!targetModel) {
+          return JSON.stringify({
+            success: false,
+            message: `No fallback model at index ${modelIndex}. Available: ${fallbacks.join(", ")}`,
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: `Recommended model: ${targetModel}`,
+          model: targetModel,
+          provider,
+        });
+      },
+    }),
   };
 
   if (!config) {
-    return { tool: statusTool };
+    return { tool: tools };
   }
 
   const disabledByProvider = getDisabledModelsByProvider(config);
   const providerIds = Object.keys(disabledByProvider);
 
   if (providerIds.length === 0) {
-    return { tool: statusTool };
+    return { tool: tools };
   }
 
   if (providerIds.length > 1) {
@@ -190,7 +228,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
         `[model-locker] Configured targetProvider "${config.targetProvider}" has no active rules. ` +
         `Available providers with active rules: ${providerIds.join(", ")}. Skipping.`
       );
-      return { tool: statusTool };
+      return { tool: tools };
     }
     targetProviderId = config.targetProvider;
   } else {
@@ -221,6 +259,6 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
 
   return {
     provider: providerHook,
-    tool: statusTool,
+    tool: tools,
   };
 };
