@@ -155,37 +155,53 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
       args: {},
       async execute() {
         if (!config) {
-          return JSON.stringify({
-            activeRules: [],
-            disabledModels: [],
-            currentTime: new Date().toISOString(),
-            error: "No config loaded",
-          }, null, 2);
+          return `📋 Model Locker Status
+
+❌ No configuration loaded
+💡 Create .opencode/model-locker.json to get started`;
         }
 
         const activeRules = getActiveRules(config);
-        const disabledModels = activeRules.flatMap(r => r.disabledModels);
+        
+        if (activeRules.length === 0) {
+          return `📋 Model Locker Status
 
-        return JSON.stringify({
-          activeRules: activeRules.map(r => ({
-            id: r.id,
-            provider: r.provider,
-            disabledModels: r.disabledModels,
-            fallbackModels: r.fallbackModels || [],
-          })),
-          disabledModels,
-          currentTime: new Date().toISOString(),
-        }, null, 2);
+✅ No active restrictions
+💡 Configure time-based rules in model-locker.json`;
+        }
+
+        let output = `📋 Model Locker Status
+
+🕐 Current time: ${new Date().toLocaleTimeString()}
+`;
+        
+        for (const rule of activeRules) {
+          const timeInfo = rule.timeRanges.map(t => 
+            `${t.start}-${t.end} (${t.timezone})`
+          ).join(", ");
+          
+          output += `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔒 Rule: ${rule.id}
+📦 Provider: ${rule.provider}
+⏰ Time: ${timeInfo}
+${rule.daysOfWeek ? `📅 Days: ${rule.daysOfWeek.join(", ")}` : "📅 Days: All"}
+❌ Disabled: ${rule.disabledModels.join(", ")}
+🔄 Fallbacks: ${(rule.fallbackModels || []).join(" → ") || "None"}
+`;
+        }
+        
+        return output;
       },
     }),
     "model-locker-select": tool({
-      description: "List available fallback models for selection",
+      description: "Select a fallback model interactively",
       args: {
         provider: tool.schema.string().optional(),
       },
       async execute(args) {
         if (!config) {
-          return JSON.stringify({ success: false, message: "No config loaded", options: [] });
+          return `❌ No config loaded. Create .opencode/model-locker.json first.`;
         }
 
         const activeRules = getActiveRules(config);
@@ -198,20 +214,37 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
             options.push({
               label: `${rule.provider}/${model}`,
               value: model,
-              description: `Fallback for ${rule.provider}`,
+              description: `Use ${model} instead of disabled models`,
             });
           }
         }
 
         if (options.length === 0) {
-          return JSON.stringify({
-            success: false,
-            message: "No fallback models available. Use model-locker-status to see current state.",
-            options: [],
-          });
+          return `📦 Available Fallbacks
+
+❌ No fallback models configured
+💡 Add fallbackModels to your rules in model-locker.json`;
         }
 
-        return JSON.stringify({
+        let output = `📦 Available Fallback Models
+
+Select a model to use, then run model-locker-swap:
+`;
+        for (let i = 0; i < options.length; i++) {
+          output += `
+${i + 1}. ${options[i].label}
+   💡 ${options[i].description}
+`;
+        }
+        
+        output += `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 To switch, run:
+   model-locker-swap with provider and modelIndex`;
+        
+        return output;
+      },
+    }),
           success: true,
           message: "Available fallback models. Use model-locker-swap to switch.",
           options,
@@ -229,32 +262,96 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
         const { provider, modelIndex = 0 } = args;
 
         if (!config) {
-          return JSON.stringify({ success: false, message: "No config loaded" });
+          return `❌ No config loaded`;
         }
 
         const activeRules = getActiveRules(config);
         const matchingRule = activeRules.find(r => r.provider === provider);
 
         if (!matchingRule) {
-          return JSON.stringify({ success: false, message: `No active rule for provider: ${provider}` });
+          return `❌ No active restriction for provider: ${provider}
+
+💡 Run model-locker-status to see available providers`;
         }
 
-        const fallbacks = matchingRule.fallbackModels || config.defaultFallbacks || [];
+        const fallbacks = matchingRule.fallbackModels || [];
         const targetModel = fallbacks[modelIndex];
 
         if (!targetModel) {
-          return JSON.stringify({
-            success: false,
-            message: `No fallback model at index ${modelIndex}. Available: ${fallbacks.join(", ")}`,
+          let msg = `❌ No fallback at index ${modelIndex}\n\n`;
+          msg += `📦 Available fallbacks for ${provider}:\n`;
+          fallbacks.forEach((m, i) => {
+            msg += `   ${i}: ${m}\n`;
           });
+          msg += `\n💡 Try: model-locker-swap with provider: "${provider}", modelIndex: 0`;
+          return msg;
         }
 
-        return JSON.stringify({
-          success: true,
-          message: `Recommended model: ${targetModel}`,
-          model: targetModel,
-          provider,
-        });
+        return `✅ Recommended Fallback
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 Switch to: ${provider}/${targetModel}
+
+💡 To activate this model in OpenCode:
+   1. Run the model picker (Cmd+M or via UI)
+   2. Select ${targetModel}
+   3. The model will be used for subsequent requests
+`;
+      },
+    }),
+    "model-locker-setup": tool({
+      description: "Interactive setup wizard to create a basic config",
+      args: {
+        provider: tool.schema.string(),
+        startTime: tool.schema.string(),
+        endTime: tool.schema.string(),
+        timezone: tool.schema.string(),
+      },
+      async execute(args) {
+        const { provider = "anthropic", startTime = "09:00", endTime = "18:00", timezone = "America/New_York" } = args;
+        
+        const fallbackMap: Record<string, string> = {
+          anthropic: "claude-3-5-haiku-20241022",
+          openai: "gpt-4o-mini",
+          google: "gemini-2.0-flash-exp",
+          xai: "grok-2-2025-01-16",
+        };
+        
+        const fallback = fallbackMap[provider] || "default-model";
+        
+        return `🔧 Model Locker Setup
+
+Here's a ready-to-use configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{
+  "rules": [
+    {
+      "id": "${provider}-work-hours",
+      "provider": "${provider}",
+      "disabledModels": ["*"],
+      "fallbackModels": ["${fallback}"],
+      "timeRanges": [
+        {
+          "start": "${startTime}",
+          "end": "${endTime}",
+          "timezone": "${timezone}"
+        }
+      ],
+      "daysOfWeek": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+      "enabled": true
+    }
+  ]
+}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💾 Copy this to .opencode/model-locker.json
+
+⚙️ Parameters used:
+   Provider: ${provider}
+   Time: ${startTime} - ${endTime} (${timezone})
+   Fallback: ${fallback}
+`;
       },
     }),
   };

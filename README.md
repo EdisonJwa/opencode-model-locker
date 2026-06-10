@@ -12,15 +12,15 @@ Automatically restrict model availability based on configurable time ranges. Gre
 - **Timezone-aware** - Use any IANA timezone (e.g., "America/New_York", "UTC")
 - **Cross-midnight support** - Configure ranges like "22:00-06:00"
 - **Day-of-week filtering** - Apply rules only on specific days
-- **Custom tools** for interaction:
-  - `model-locker-status` - View active rules and disabled models
-  - `model-locker-swap` - Get fallback model recommendations
+- **Interactive tools**:
+  - `model-locker-status` - View active rules with beautiful formatting
+  - `model-locker-swap` - Get fallback model recommendations  
   - `model-locker-select` - List available fallback models
-- **Session notifications** - Warn when restrictions are active
+  - `model-locker-setup` - Quick setup wizard to generate config
 
 ## Installation
 
-### Option 1: Via npm (recommended)
+### Via npm (recommended)
 
 ```bash
 npm install -g opencode-model-locker
@@ -35,30 +35,25 @@ Then add to your `opencode.json`:
 }
 ```
 
-### Option 2: Local plugin (development)
+## Quick Start
 
-```bash
-# Clone this repo
-git clone https://github.com/EdisonJwa/opencode-model-locker.git
-cd opencode-model-locker
+### 1. Run the setup wizard
 
-# Copy to project or global plugin directory
-cp -r .opencode ~/path-to-your-project/.opencode/
-# OR for global installation:
-mkdir -p ~/.config/opencode/plugins
-cp .opencode/plugins/model-locker.ts ~/.config/opencode/plugins/
+```
+Use model-locker-setup tool with provider: "anthropic"
 ```
 
-## Configuration
+This generates a ready-to-use configuration!
 
-Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` for global:
+### 2. Or create config manually
+
+Create `.opencode/model-locker.json`:
 
 ```json
 {
-  "refreshIntervalSeconds": 60,
   "rules": [
     {
-      "id": "work-hours-disable-all",
+      "id": "work-hours",
       "provider": "anthropic",
       "disabledModels": ["*"],
       "fallbackModels": ["claude-3-5-haiku-20241022"],
@@ -71,59 +66,12 @@ Create `.opencode/model-locker.json` in your project or `~/.config/opencode/` fo
       ],
       "daysOfWeek": ["monday", "tuesday", "wednesday", "thursday", "friday"],
       "enabled": true
-    },
-    {
-      "id": "night-disable-gpt4",
-      "provider": "openai",
-      "disabledModels": ["gpt-4o", "gpt-4-turbo", "openai/*"],
-      "fallbackModels": ["gpt-4o-mini"],
-      "timeRanges": [
-        {
-          "start": "22:00",
-          "end": "06:00",
-          "timezone": "UTC"
-        }
-      ],
-      "enabled": true
     }
   ]
 }
 ```
 
-### Pattern Syntax for `disabledModels`
-
-| Pattern | Example | Matches |
-|---------|---------|---------|
-| `*` | `"*"` | All models (disables entire provider) |
-| `provider/*` | `"openai/*"` | All models from that provider |
-| Specific model | `"gpt-4o"` | Only that exact model |
-| Prefix match | `"gpt-4*"` | Any model starting with "gpt-4" |
-
-### Configuration Schema
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `refreshIntervalSeconds` | number | No | How often to re-evaluate rules (default: 60) |
-| `rules` | array | Yes | Array of rule objects |
-
-### Rule Schema
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | Yes | Unique identifier for the rule |
-| `provider` | string | Yes | Provider ID (e.g., "anthropic", "openai") |
-| `disabledModels` | array | Yes | Model patterns to disable (supports `*` and `provider/*`) |
-| `fallbackModels` | array | No | Priority-ordered fallback model IDs |
-| `timeRanges` | array | Yes | Array of time range objects |
-| `timeRanges[].start` | string | Yes | Start time "HH:MM" |
-| `timeRanges[].end` | string | Yes | End time "HH:MM" |
-| `timeRanges[].timezone` | string | Yes | IANA timezone (e.g., "America/New_York") |
-| `daysOfWeek` | array | No | Days to apply rule (lowercase: "monday", etc.) |
-| `enabled` | boolean | No | Whether rule is active (default: true) |
-
 ## Usage
-
-After installation, the plugin automatically filters models based on your configuration.
 
 ### Check Status
 
@@ -131,7 +79,19 @@ After installation, the plugin automatically filters models based on your config
 Use model-locker-status tool
 ```
 
-Shows active rules, disabled models, and current time.
+Shows:
+- Current time
+- Active rules with details
+- Disabled models
+- Configured fallbacks
+
+### Get Fallback Recommendation
+
+```
+Use model-locker-swap tool with provider: "anthropic"
+```
+
+Returns a recommended fallback model with instructions.
 
 ### List Available Fallbacks
 
@@ -139,23 +99,27 @@ Shows active rules, disabled models, and current time.
 Use model-locker-select tool with provider: "anthropic"
 ```
 
-Lists fallback models for the specified provider.
+Shows all available fallback models with descriptions.
 
-### Get Swap Recommendation
+### Quick Setup
 
 ```
-Use model-locker-swap tool with provider: "anthropic"
+Use model-locker-setup tool with provider: "openai"
 ```
 
-Returns a recommended fallback model to use.
+Generates a ready-to-use config you can copy.
 
-## API Limitations
+## Pattern Syntax for `disabledModels`
 
-- **Single provider filter**: OpenCode's plugin API only supports filtering ONE provider per plugin. If you have rules for multiple providers, only the first one will be filtered.
+| Pattern | Example | Matches |
+|---------|---------|---------|
+| `*` | `"*"` | All models (disables entire provider) |
+| `provider/*` | `"openai/*"` | All models from that provider |
+| Specific model | `"gpt-4o"` | Only that exact model |
 
 ## Common Configurations
 
-### Disable ALL models during work hours
+### Disable all models during work hours
 
 ```json
 {
@@ -170,26 +134,12 @@ Returns a recommended fallback model to use.
 }
 ```
 
-### Disable all OpenAI models at night (UTC)
+### Disable specific expensive models
 
 ```json
 {
   "rules": [{
-    "id": "night-disable",
-    "provider": "openai",
-    "disabledModels": ["openai/*"],
-    "fallbackModels": ["gpt-4o-mini"],
-    "timeRanges": [{ "start": "22:00", "end": "06:00", "timezone": "UTC" }]
-  }]
-}
-```
-
-### Disable specific expensive models but keep cheaper ones
-
-```json
-{
-  "rules": [{
-    "id": "expensive-models",
+    "id": "expensive",
     "provider": "anthropic",
     "disabledModels": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
     "fallbackModels": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
@@ -197,6 +147,10 @@ Returns a recommended fallback model to use.
   }]
 }
 ```
+
+## API Limitations
+
+- **Single provider filter**: OpenCode's plugin API only supports filtering ONE provider per plugin.
 
 ## License
 
