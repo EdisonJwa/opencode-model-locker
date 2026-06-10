@@ -38,3 +38,7 @@ See `.opencode/model-locker.json` for the configuration schema.
 - Only ONE provider can be filtered per plugin (OpenCode API limitation)
 - Use `targetProvider` config option to specify which provider to filter
 - Actual model switching requires manual user action
+
+## Changelog
+
+- Initial release
