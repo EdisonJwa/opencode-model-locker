@@ -1,4 +1,5 @@
-import type { Plugin } from "@opencode-ai/plugin";
+import type { Plugin, ProviderHook } from "@opencode-ai/plugin";
+import type { Provider as ProviderV2, Model as ModelV2 } from "@opencode-ai/sdk/v2";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -111,6 +112,20 @@ function getActiveRules(config: ModelLockerConfig): Rule[] {
   return config.rules.filter(isRuleActive);
 }
 
+function getDisabledModelsByProvider(config: ModelLockerConfig): Record<string, Set<string>> {
+  const activeRules = getActiveRules(config);
+  const disabledByProvider: Record<string, Set<string>> = {};
+  for (const rule of activeRules) {
+    if (!disabledByProvider[rule.provider]) {
+      disabledByProvider[rule.provider] = new Set<string>();
+    }
+    for (const modelId of rule.disabledModels) {
+      disabledByProvider[rule.provider].add(modelId);
+    }
+  }
+  return disabledByProvider;
+}
+
 export const ModelLockerPlugin: Plugin = async ({ directory }) => {
   const configPath = join(directory, ".opencode", "model-locker.json");
   const config = loadConfig(configPath);
@@ -119,5 +134,31 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
     return {};
   }
 
-  return {};
+  const disabledByProvider = getDisabledModelsByProvider(config);
+  const providerIds = Object.keys(disabledByProvider);
+
+  if (providerIds.length === 0) {
+    return {};
+  }
+
+  const firstProviderId = providerIds[0];
+  const providerHook: ProviderHook = {
+    id: firstProviderId,
+    models: async (provider, _ctx) => {
+      const disabled = disabledByProvider[firstProviderId] || new Set<string>();
+      const allModels = provider.models || {};
+      const filtered: Record<string, ModelV2> = {};
+      for (const [modelId, model] of Object.entries(allModels)) {
+        if (!disabled.has(modelId)) {
+          filtered[modelId] = model;
+        }
+      }
+      console.log(`[model-locker] Filtered ${Object.keys(allModels).length - Object.keys(filtered).length} models for ${firstProviderId}`);
+      return filtered;
+    },
+  };
+
+  return {
+    provider: providerHook,
+  };
 };
