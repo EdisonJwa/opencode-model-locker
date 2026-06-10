@@ -22,6 +22,7 @@ export interface Rule {
 export interface ModelLockerConfig {
   refreshIntervalSeconds?: number;
   defaultFallbacks?: string[];
+  targetProvider?: string;
   rules: Rule[];
 }
 
@@ -141,11 +142,39 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
     return {};
   }
 
-  const firstProviderId = providerIds[0];
+  if (providerIds.length > 1) {
+    console.warn(
+      `[model-locker] WARNING: The OpenCode plugin API supports only ONE provider hook per plugin. ` +
+      `Found active rules for providers: ${providerIds.join(", ")}. ` +
+      `Set "targetProvider" in config to choose which provider to filter. ` +
+      `Defaulting to "${config.targetProvider || providerIds[0]}".`
+    );
+  }
+
+  let targetProviderId: string;
+  if (config.targetProvider) {
+    if (!disabledByProvider[config.targetProvider]) {
+      console.warn(
+        `[model-locker] Configured targetProvider "${config.targetProvider}" has no active rules. ` +
+        `Available providers with active rules: ${providerIds.join(", ")}. Skipping.`
+      );
+      return {};
+    }
+    targetProviderId = config.targetProvider;
+  } else {
+    targetProviderId = providerIds[0];
+    if (providerIds.length > 1) {
+      console.warn(
+        `[model-locker] No targetProvider configured. Using "${targetProviderId}" (first provider with active rules). ` +
+        `Providers with active rules but NOT filtered: ${providerIds.slice(1).join(", ")}.`
+      );
+    }
+  }
+
   const providerHook: ProviderHook = {
-    id: firstProviderId,
+    id: targetProviderId,
     models: async (provider, _ctx) => {
-      const disabled = disabledByProvider[firstProviderId] || new Set<string>();
+      const disabled = disabledByProvider[targetProviderId] || new Set<string>();
       const allModels = provider.models || {};
       const filtered: Record<string, ModelV2> = {};
       for (const [modelId, model] of Object.entries(allModels)) {
@@ -153,7 +182,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
           filtered[modelId] = model;
         }
       }
-      console.log(`[model-locker] Filtered ${Object.keys(allModels).length - Object.keys(filtered).length} models for ${firstProviderId}`);
+      console.log(`[model-locker] Filtered ${Object.keys(allModels).length - Object.keys(filtered).length} models for ${targetProviderId}`);
       return filtered;
     },
   };
