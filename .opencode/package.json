@@ -1,0 +1,7 @@
+{
+  "name": "model-locker",
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.0.0"
+  }
+}
