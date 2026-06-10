@@ -43,8 +43,12 @@ function loadConfig(configPath: string): ModelLockerConfig | null {
   }
 }
 
-function parseTime(timeStr: string): { hours: number; minutes: number } {
-  const [hours, minutes] = timeStr.split(":").map(Number);
+function parseTime(timeStr: string): { hours: number; minutes: number } | null {
+  const match = /^([0-9]{1,2}):([0-9]{2})$/.exec(timeStr);
+  if (!match) return null;
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return { hours, minutes };
 }
 
@@ -58,16 +62,20 @@ function isTimeInRange(
     timeZone: timezone,
     hour: "numeric",
     minute: "numeric",
-    hour12: false,
+    hourCycle: "h23",
   });
 
   const parts = formatter.formatToParts(current);
   const hour = parseInt(parts.find(p => p.type === "hour")?.value || "0");
   const minute = parseInt(parts.find(p => p.type === "minute")?.value || "0");
 
+  const startParsed = parseTime(start);
+  const endParsed = parseTime(end);
+  if (!startParsed || !endParsed) return false;
+
   const currentMinutes = hour * 60 + minute;
-  const startMinutes = parseTime(start).hours * 60 + parseTime(start).minutes;
-  const endMinutes = parseTime(end).hours * 60 + parseTime(end).minutes;
+  const startMinutes = startParsed.hours * 60 + startParsed.minutes;
+  const endMinutes = endParsed.hours * 60 + endParsed.minutes;
 
   if (startMinutes <= endMinutes) {
     return currentMinutes >= startMinutes && currentMinutes < endMinutes;
@@ -82,8 +90,14 @@ function isRuleActive(rule: Rule): boolean {
   const now = new Date();
 
   if (rule.daysOfWeek && rule.daysOfWeek.length > 0) {
-    const dayName = now.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-    if (!rule.daysOfWeek.includes(dayName)) {
+    const dayMatch = rule.timeRanges.some(range => {
+      const dayName = new Intl.DateTimeFormat("en-US", {
+        timeZone: range.timezone,
+        weekday: "long",
+      }).format(now).toLowerCase();
+      return rule.daysOfWeek!.includes(dayName);
+    });
+    if (!dayMatch) {
       return false;
     }
   }
