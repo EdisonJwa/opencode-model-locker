@@ -161,6 +161,47 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
         }, null, 2);
       },
     }),
+    "model-locker-select": tool({
+      description: "List available fallback models for selection",
+      args: {
+        provider: tool.schema.string().optional(),
+      },
+      async execute(args) {
+        if (!config) {
+          return JSON.stringify({ success: false, message: "No config loaded", options: [] });
+        }
+
+        const activeRules = getActiveRules(config);
+        const options: Array<{ label: string; value: string; description: string }> = [];
+
+        for (const rule of activeRules) {
+          if (args.provider && rule.provider !== args.provider) continue;
+          const fallbacks = rule.fallbackModels || config.defaultFallbacks || [];
+          for (const model of fallbacks) {
+            options.push({
+              label: `${rule.provider}/${model}`,
+              value: model,
+              description: `Fallback for ${rule.provider}`,
+            });
+          }
+        }
+
+        if (options.length === 0) {
+          return JSON.stringify({
+            success: false,
+            message: "No fallback models available. Use model-locker-status to see current state.",
+            options: [],
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: "Available fallback models. Use model-locker-swap to switch.",
+          options,
+          instruction: "Run model-locker-swap with provider and modelIndex to switch.",
+        });
+      },
+    }),
     "model-locker-swap": tool({
       description: "Swap to a fallback model for the given provider",
       args: {
