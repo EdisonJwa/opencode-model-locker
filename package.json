@@ -1,0 +1,31 @@
+{
+  "name": "opencode-model-locker",
+  "version": "1.0.0",
+  "description": "Model Locker Plugin for OpenCode - Automatically restrict model availability based on time ranges",
+  "type": "module",
+  "bin": {
+    "opencode-model-locker": "./bin/cli.js"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "model-locker",
+    "ai-coding",
+    "cost-control"
+  ],
+  "author": "EdisonJwa",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EdisonJwa/opencode-model-locker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EdisonJwa/opencode-model-locker/issues"
+  }
+}

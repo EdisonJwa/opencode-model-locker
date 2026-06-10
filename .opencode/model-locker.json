@@ -1,14 +1,21 @@
 {
   "refreshIntervalSeconds": 60,
-  "defaultFallbacks": ["anthropic/claude-3-5-haiku-20241022"],
   "rules": [
     {
-      "id": "work-hours-expense",
+      "id": "work-hours-disable-all",
       "provider": "anthropic",
-      "disabledModels": ["claude-sonnet-4-20250514"],
-      "fallbackModels": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+      "disabledModels": ["*"],
+      "fallbackModels": ["claude-3-5-haiku-20241022"],
       "timeRanges": [{ "start": "13:00", "end": "19:00", "timezone": "America/New_York" }],
       "daysOfWeek": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+      "enabled": true
+    },
+    {
+      "id": "night-disable-gpt4",
+      "provider": "openai",
+      "disabledModels": ["gpt-4o", "gpt-4-turbo", "openai/*"],
+      "fallbackModels": ["gpt-4o-mini"],
+      "timeRanges": [{ "start": "22:00", "end": "06:00", "timezone": "UTC" }],
       "enabled": true
     }
   ]

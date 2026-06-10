@@ -13,7 +13,7 @@ export interface TimeRange {
 export interface Rule {
   id: string;
   provider: string;
-  disabledModels: string[];
+  disabledModels: string[];  // e.g., ["anthropic/claude-opus-4", "openai/*", "gpt-4-turbo"]
   fallbackModels?: string[];
   timeRanges: TimeRange[];
   daysOfWeek?: string[];
@@ -22,8 +22,6 @@ export interface Rule {
 
 export interface ModelLockerConfig {
   refreshIntervalSeconds?: number;
-  defaultFallbacks?: string[];
-  targetProvider?: string;
   rules: Rule[];
 }
 
@@ -114,18 +112,37 @@ function getActiveRules(config: ModelLockerConfig): Rule[] {
   return config.rules.filter(isRuleActive);
 }
 
-function getDisabledModelsByProvider(config: ModelLockerConfig): Record<string, Set<string>> {
+function getDisabledModelsByProvider(config: ModelLockerConfig): Record<string, string[]> {
   const activeRules = getActiveRules(config);
-  const disabledByProvider: Record<string, Set<string>> = {};
+  const disabledByProvider: Record<string, string[]> = {};
   for (const rule of activeRules) {
     if (!disabledByProvider[rule.provider]) {
-      disabledByProvider[rule.provider] = new Set<string>();
+      disabledByProvider[rule.provider] = [];
     }
     for (const modelId of rule.disabledModels) {
-      disabledByProvider[rule.provider].add(modelId);
+      if (!disabledByProvider[rule.provider].includes(modelId)) {
+        disabledByProvider[rule.provider].push(modelId);
+      }
     }
   }
   return disabledByProvider;
+}
+
+function isAllModelsDisabled(config: ModelLockerConfig, providerId: string): boolean {
+  const activeRules = getActiveRules(config);
+  const rule = activeRules.find(r => r.provider === providerId);
+  if (!rule) return false;
+  return rule.disabledModels.some(m => m === "*" || m === `${providerId}/*`);
+}
+
+function isModelDisabled(modelId: string, disabledPatterns: string[], providerId: string): boolean {
+  for (const pattern of disabledPatterns) {
+    if (pattern === "*") return true;
+    if (pattern === `${providerId}/*`) return true;
+    if (pattern === modelId) return true;
+    if (pattern.includes("/") && modelId.startsWith(pattern.replace(/\*$/, ""))) return true;
+  }
+  return false;
 }
 
 export const ModelLockerPlugin: Plugin = async ({ directory }) => {
@@ -154,7 +171,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
             id: r.id,
             provider: r.provider,
             disabledModels: r.disabledModels,
-            fallbackModels: r.fallbackModels || config.defaultFallbacks || [],
+            fallbackModels: r.fallbackModels || [],
           })),
           disabledModels,
           currentTime: new Date().toISOString(),
@@ -176,7 +193,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
 
         for (const rule of activeRules) {
           if (args.provider && rule.provider !== args.provider) continue;
-          const fallbacks = rule.fallbackModels || config.defaultFallbacks || [];
+          const fallbacks = rule.fallbackModels || [];
           for (const model of fallbacks) {
             options.push({
               label: `${rule.provider}/${model}`,
@@ -255,41 +272,21 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
 
   if (providerIds.length > 1) {
     console.warn(
-      `[model-locker] WARNING: The OpenCode plugin API supports only ONE provider hook per plugin. ` +
-      `Found active rules for providers: ${providerIds.join(", ")}. ` +
-      `Set "targetProvider" in config to choose which provider to filter. ` +
-      `Defaulting to "${config.targetProvider || providerIds[0]}".`
+      `[model-locker] OpenCode plugin API supports only ONE provider filter. ` +
+      `Found active rules for: ${providerIds.join(", ")}. Using "${providerIds[0]}".`
     );
   }
 
-  let targetProviderId: string;
-  if (config.targetProvider) {
-    if (!disabledByProvider[config.targetProvider]) {
-      console.warn(
-        `[model-locker] Configured targetProvider "${config.targetProvider}" has no active rules. ` +
-        `Available providers with active rules: ${providerIds.join(", ")}. Skipping.`
-      );
-      return { tool: tools };
-    }
-    targetProviderId = config.targetProvider;
-  } else {
-    targetProviderId = providerIds[0];
-    if (providerIds.length > 1) {
-      console.warn(
-        `[model-locker] No targetProvider configured. Using "${targetProviderId}" (first provider with active rules). ` +
-        `Providers with active rules but NOT filtered: ${providerIds.slice(1).join(", ")}.`
-      );
-    }
-  }
+  const targetProviderId = providerIds[0];
 
   const providerHook: ProviderHook = {
     id: targetProviderId,
     models: async (provider, _ctx) => {
-      const disabled = disabledByProvider[targetProviderId] || new Set<string>();
+      const disabledPatterns = disabledByProvider[targetProviderId] || [];
       const allModels = provider.models || {};
       const filtered: Record<string, ModelV2> = {};
       for (const [modelId, model] of Object.entries(allModels)) {
-        if (!disabled.has(modelId)) {
+        if (!isModelDisabled(modelId, disabledPatterns, targetProviderId)) {
           filtered[modelId] = model;
         }
       }
