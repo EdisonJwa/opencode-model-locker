@@ -301,5 +301,14 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
   return {
     provider: providerHook,
     tool: tools,
+    "session.created": async () => {
+      const activeRules = getActiveRules(config);
+      if (activeRules.length > 0) {
+        console.log(
+          `[model-locker] Active restrictions: ${activeRules.map(r => r.id).join(", ")}. ` +
+          `Use model-locker-status to see details.`
+        );
+      }
+    },
   };
 };
