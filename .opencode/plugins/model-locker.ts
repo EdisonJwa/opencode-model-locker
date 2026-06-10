@@ -1,3 +1,4 @@
+import { tool } from "@opencode-ai/plugin";
 import type { Plugin, ProviderHook } from "@opencode-ai/plugin";
 import type { Provider as ProviderV2, Model as ModelV2 } from "@opencode-ai/sdk/v2";
 import { readFileSync, existsSync } from "fs";
@@ -131,15 +132,46 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
   const configPath = join(directory, ".opencode", "model-locker.json");
   const config = loadConfig(configPath);
 
+  const statusTool = {
+    "model-locker-status": tool({
+      description: "Show current model locker status, active rules, and disabled models",
+      args: {},
+      async execute() {
+        if (!config) {
+          return JSON.stringify({
+            activeRules: [],
+            disabledModels: [],
+            currentTime: new Date().toISOString(),
+            error: "No config loaded",
+          }, null, 2);
+        }
+
+        const activeRules = getActiveRules(config);
+        const disabledModels = activeRules.flatMap(r => r.disabledModels);
+
+        return JSON.stringify({
+          activeRules: activeRules.map(r => ({
+            id: r.id,
+            provider: r.provider,
+            disabledModels: r.disabledModels,
+            fallbackModels: r.fallbackModels || config.defaultFallbacks || [],
+          })),
+          disabledModels,
+          currentTime: new Date().toISOString(),
+        }, null, 2);
+      },
+    }),
+  };
+
   if (!config) {
-    return {};
+    return { tool: statusTool };
   }
 
   const disabledByProvider = getDisabledModelsByProvider(config);
   const providerIds = Object.keys(disabledByProvider);
 
   if (providerIds.length === 0) {
-    return {};
+    return { tool: statusTool };
   }
 
   if (providerIds.length > 1) {
@@ -158,7 +190,7 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
         `[model-locker] Configured targetProvider "${config.targetProvider}" has no active rules. ` +
         `Available providers with active rules: ${providerIds.join(", ")}. Skipping.`
       );
-      return {};
+      return { tool: statusTool };
     }
     targetProviderId = config.targetProvider;
   } else {
@@ -189,5 +221,6 @@ export const ModelLockerPlugin: Plugin = async ({ directory }) => {
 
   return {
     provider: providerHook,
+    tool: statusTool,
   };
 };
